@@ -27,7 +27,7 @@ Such a model could be used to guide card selection during the drafting process.
 I originally went straight to random forest, as it's my go to model and very good when significant interactions lurk in the data.
 After revisiting this project, I decided I should try linear regression - since that really should be the starting point anyway. 
 
-To start I defined a training set and a test set using 20% of the available data to train and holding the remaing 80% to test the predictions on.
+To start I defined a training set and a test set using 20% (9,079 records)of the available data to train and holding the remaing 80% to test the predictions on.
 The figure below is the result:
 ![LR_mtg](https://user-images.githubusercontent.com/36259203/177468935-2e201547-36f6-40d3-80e5-06acc11c1a57.png)
 
