@@ -15,10 +15,32 @@ The rates vector stores the observed win rate of the given deck i.e. Player One 
 
 A random forest is used to build a regression model to predict the win rate of a deck given its composition (player skill is not considered)
 """
-
 x = read.csv('draft_data_public.SNC.PremierDraft.csv')
 
+### Functions
 
+win_dist = function(winrate){
+  wins = c(0,1,2,3,4,5,6,7,7,7)
+  losses = c(3,3,3,3,3,3,3,2,1,0)
+  outcomemat = expand.grid(c(1,0),c(1,0),c(1,0),c(1,0),c(0,1),c(0,1),c(0,1),c(1,0),c(1,0),c(1,0))
+  lossrate = 1 - winrate
+  probs = vector()
+  for(i in 1:length(losses)){
+    games = wins[i] + losses[i]
+    smallout = unique(outcomemat[,1:games])
+    if(wins[i] < 7){
+      good= which(rowSums(smallout)==wins[i] & smallout[,ncol(smallout)]==0)
+    }
+    if(wins[i] == 7){
+      good= which(rowSums(smallout)==wins[i] & smallout[,ncol(smallout)]==1)
+    }
+    prob = winrate^wins[i]*lossrate^losses[i]*length(good)
+    probs[i] = prob
+  }
+  return(probs)
+}
+
+#### End Functions
 
 completed = which(x$event_match_losses ==3 | x$event_match_wins == 7)
 pool = grep('pool',colnames(x))
@@ -86,7 +108,8 @@ for(z in 1:length(drafts)){
 library(randomForest)
 library(pROC)
 
-
+DECKS = read.csv('SNC_Decks.csv')[,-1]
+rates = read.csv("SNC_win_rates.csv")[,2]
 D = DECKS
 labs = as.factor(rates >= 6/9)
 mod = randomForest(labs ~., D,ntree=50)
@@ -104,7 +127,46 @@ for(i in 1:nrow(m)){
 results = as.numeric(colnames(m)[1:10])
 plot(results,m[i,1:10]/sum(m[i,1:10]))
 
+### Fit deck win rates with linear regression
+bins = seq(from=0,to=1,by=.01)
 
+
+samp = sample(seq(nrow(D)),nrow(D)*.2)
+D2 = cbind(D,rates)
+train = D2[samp,]
+test = D2[-samp,]
+model1 = lm(rates~., data=train)
+counts = vector()
+obs = vector()
+binpreds = vector()
+preds <- predict(model1, newdata = test)
+for(i in 1:length(bins)){
+  hits = which(preds >= bins[i]-.005 & preds <= bins[i]+.005)
+  if(length(hits) > 0){
+    counts[i] = length(hits)
+    obs[i] = mean(test$rates[hits])
+    binpreds[i] = mean(preds[hits])
+  }
+  # if(length(hits)>30){
+  #   theor = win_dist(bins[i])
+  #   par(mfrow=c(2,1))
+  #   barplot(theor,main = bins[i])
+  #   barplot(table(mod_reg$y[hits]),main=c(length(hits),mean(mod_reg$y[hits])))
+  # }
+}
+plot(preds,test$rates,xlab='Predicted Win Rate',ylab='Observed Win Rate')
+mtext(paste('R2:',round(cor(preds,test$rates)^2,2)))
+
+ok = which(counts >= 30)
+#par(mfrow=c(1,3))
+plot(xlim=c(0,1),ylim=c(0,1),
+     bins[ok],obs[ok],
+     xlab='Predicted win rate',ylab='Observed win rate',
+     pch=16,main='Win Rate of Deck bins/populations - all populated bins')
+mtext(paste('R2:',round(cor(bins[ok],obs[ok])^2,2)))
+abline(0,1,lty=3)
+
+### Predict DECK WIN RATES with random forest
 mod_reg = randomForest(rates ~., D, ntree=20)
 
 
@@ -122,33 +184,50 @@ for(i in 1:length(bins)){
     counts[i] = length(hits)
     obs[i] = mean(mod_reg$y[hits])
   }
+  # if(length(hits)>30){
+  #   theor = win_dist(bins[i])
+  #   par(mfrow=c(2,1))
+  #   barplot(theor,main = bins[i])
+  #   barplot(table(mod_reg$y[hits]),main=c(length(hits),mean(mod_reg$y[hits])))
+  # }
 }
-ok = which(counts > 5)
+ok = which(counts >= 2)
 sizes = counts[ok]/max(counts[ok])
 sizes = log(1/sizes)
 #par(mfrow=c(1,3))
 plot(xlim=c(0,1),ylim=c(0,1),
      bins[ok],obs[ok],
      xlab='Predicted win rate',ylab='Observed win rate',
-     pch=16,main='Predicting Deck Win Rate')
+     pch=16,main='Win Rate of Deck bins/populations - all populated bins')
 mtext(round(cor(bins[ok],obs[ok])^2,2))
 abline(0,1,lty=3)
-#abline(h=.66)
+
+####
+ok = which(counts >= 30)
+sizes = counts[ok]/max(counts[ok])
+sizes = log(1/sizes)
+#par(mfrow=c(1,3))
+plot(xlim=c(0,1),ylim=c(0,1),
+     bins[ok],obs[ok],
+     xlab='Predicted win rate',ylab='Observed win rate',
+     pch=16,main='Win Rate of Deck bins/populations - bins w >= 30 predictions')
+mtext(round(cor(bins[ok],obs[ok])^2,2))
+abline(0,1,lty=3)
+
 res = obs[ok]
 p  = bins[ok]
 lmmod = lm(res ~ p)
-intercept = lmmod$coefficients[1]
 slope = lmmod$coefficients[2]
 p2 = p*slope + intercept
 
 plot(xlim=c(0,1),ylim=c(0,1),
      p2,obs[ok],
      xlab='Predicted win rate',ylab='Observed win rate',
-     pch=16,main='Predicting Deck Win Rate - Adjusted prediction bins')
+     pch=16,main='Predicting Deck Win Rate - Rotated prediction bins')
 mtext(round(cor(p2,obs[ok])^2,2))
 abline(0,1)
-plot(p2,p,xlim=c(0,1),ylim=c(0,1))
-abline(0,1)
+#plot(p2,p,xlim=c(0,1),ylim=c(0,1))
+#abline(0,1)
 
 # Overlay random forest bins vs regression calibrated bins
 res = obs[ok]
@@ -375,6 +454,9 @@ if(wins[i] == 7){
 }
 
 winrate = .49
+wins = c(0,1,2,3,4,5,6,7,7,7)
+losses = c(3,3,3,3,3,3,3,2,1,0)
+outcomemat = expand.grid(c(1,0),c(1,0),c(1,0),c(1,0),c(0,1),c(0,1),c(0,1),c(1,0),c(1,0),c(1,0))
 lossrate = 1 - winrate
 probs = vector()
 for(i in 1:length(losses)){
